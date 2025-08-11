@@ -3,3 +3,4 @@ PyYAML
 python-dateutil
 tqdm
 Jinja2
+feedparser
