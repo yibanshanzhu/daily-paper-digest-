@@ -2,7 +2,8 @@ name: Daily Digest (Beijing 08:30)
 
 on:
   schedule:
-    - cron: '30 0 * * *'   # 00:30 UTC = 08:30 Asia/Shanghai
+    # 00:30 UTC == 08:30 Asia/Shanghai（北京）
+    - cron: '30 0 * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -13,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -22,21 +24,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # ① 计算“北京当天”的日期，供后续使用
+      - name: Get Beijing date
+        id: date
+        run: echo "today=$(TZ=Asia/Shanghai date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      # ② 抓取论文（窗口放宽：14天；量加大：最多250）
       - name: Fetch arXiv
         run: |
-          python scripts/fetch_arxiv.py --days 2 --max 150 --profiles protein_structure dna_binding bioinformatics
+          python scripts/fetch_arxiv.py \
+            --days 14 --max 250 \
+            --profiles protein_structure dna_binding bioinformatics
 
-      # 用北京时间的“当天日期”生成摘要
+      # （可选）调试：看看抓到了什么
+      # - name: Debug arxiv.json
+      #   run: |
+      #     echo "Date(Beijing): ${{ steps.date.outputs.today }}"
+      #     head -n 120 data/arxiv.json || true
+
+      # ③ 用“北京当天”的日期生成带 Qwen 摘要的日报
       - name: Summarize with Qwen
         env:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
         run: |
-          DATE=$(TZ=Asia/Shanghai date +%F)
-          python scripts/summarize_qwen.py --date $DATE --limit 40
+          python scripts/summarize_qwen.py --date ${{ steps.date.outputs.today }} --limit 60
 
+      # ④ 生成静态网页
       - name: Build pages
         run: python scripts/build_pages.py
 
+      # ⑤ 发布到 gh-pages（GitHub Pages 会自动上线）
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v3
         with:
